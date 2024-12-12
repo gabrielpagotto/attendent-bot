@@ -17,6 +17,18 @@ class SaveClientNamesTool(BaseTool):
     class Config:
         arbitrary_types_allowed = True
 
+class StartOrder(BaseTool):
+    name: str = 'Ferramenta para iniciar um novo pedido.'
+    description: str = 'Ferramenta util para iniciar um novo pedido para o cliente'
+    new_order: bool = False
+    
+
+    def _run(self):
+        self.new_order = True
+
+    class Config:
+        arbitrary_types_allowed = True
+
 
 class CreateOrderTool(BaseTool):
     name: str = "Ferramenta para criar um pedido"

@@ -3,9 +3,9 @@ from src.database import Client, ClientConversation, Company, Order, Product
 
 
 def create_history_informations(conversations: list[ClientConversation]) -> str:
-    formatted = "\n".join([f"user: {item.input}\nassistent: {item.output}" for item in conversations])
+    formatted = "\n".join([f"cliente: {item.input}\nvocê: {item.output}" for item in conversations])
     return """
-    Seu histórico de conversa com o cliente é:
+    Histórico de conversas:
     {history}
 
     """.format(
@@ -15,7 +15,7 @@ def create_history_informations(conversations: list[ClientConversation]) -> str:
 
 def create_company_informations(company: Company):
     company_dict = company.model_dump()
-    company_info = "DADOS DA EMPRESA\n"
+    company_info = "Dados da empresa\n"
     for key, value in company_dict.items():
         company_info += f" - {key}: {value}\n"
     return company_info
@@ -23,7 +23,7 @@ def create_company_informations(company: Company):
 
 def create_client_informations(client: Client):
     return f"""
-    INFORMAÇÕES DO CLIENTE
+    Dados do cliente
      - nome: {client.first_name if client.first_name else "Não informado."}
      - sobrenome: {client.last_name if client.last_name else "Não informado."}
 
