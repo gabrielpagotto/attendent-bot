@@ -1,5 +1,6 @@
-from typing import Any
+import requests
 from crewai.tools import BaseTool
+from crewai_tools import FileReadTool
 
 from src.database import Client
 from src.services import Services
@@ -17,11 +18,11 @@ class SaveClientNamesTool(BaseTool):
     class Config:
         arbitrary_types_allowed = True
 
+
 class StartOrder(BaseTool):
-    name: str = 'Ferramenta para iniciar um novo pedido.'
-    description: str = 'Ferramenta util para iniciar um novo pedido para o cliente'
+    name: str = "Ferramenta para iniciar um novo pedido."
+    description: str = "Ferramenta util para iniciar um novo pedido para o cliente"
     new_order: bool = False
-    
 
     def _run(self):
         self.new_order = True
@@ -84,14 +85,76 @@ class ChangeProductQuantityInOrderTool(BaseTool):
         arbitrary_types_allowed = True
 
 
+class SaveOrderAddress(BaseTool):
+    name: str = "Ferramenta salvar o endereço em que o pedido deve ser entre"
+    description: str = "Ferramenta util salvar o endereço em que o pedido deve ser entre."
+    services: Services
+    client: Client
+
+    def _run(self, order_id: int, address: str):
+        self.services.save_order_address(order_id, address)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+
+class FinalizeOrder(BaseTool):
+    name: str = "Ferramenta confirmar o pedido"
+    description: str = "Ferramenta util confirmar o pedido."
+    services: Services
+    client: Client
+
+    def _run(self, order_id: int):
+        self.services.finalized_order(order_id)
+
+    class Config:
+        arbitrary_types_allowed = True
+
+class GetAddressFromCepTool(BaseTool):
+    name: str = 'Ferramenta para buscar endereço pelo CEP'
+    description: str = 'Ferramenta util para buscar um endereço completo com base no CEP fornecido.'
+
+    def _run(self, cep: str) -> str:
+        cep = cep.replace("-", "").strip()
+        if not cep.isdigit() or len(cep) != 8:
+            return "CEP inválido. O CEP deve conter exatamente 8 dígitos numéricos."        
+        url = f"https://viacep.com.br/ws/{cep}/json/"        
+        try:
+            response = requests.get(url)
+            response.raise_for_status()            
+            data = response.json()            
+            if "erro" in data:
+                return f"Endereço não encontrado para o CEP: {cep}."            
+            return (
+                f"{data.get('logradouro', 'Logradouro não disponível')}, "
+                f"{data.get('bairro', 'Bairro não disponível')}, "
+                f"{data.get('localidade', 'Cidade não disponível')} - "
+                f"{data.get('uf', 'UF não disponível')}"
+            )
+        
+        except requests.exceptions.RequestException as e:
+            return f"Erro ao buscar o endereço: {str(e)}"
+
+
 class CloseCurrentConversation(BaseTool):
     name: str = "Ferramenta para encerrar a conversa atual"
     description: str = "Ferramenta util para encerrar a conversa atual."
     services: Services
     client: Client
+    to_close: bool = False
 
     def _run(self):
-        self.services.close_current_conversation(self.client)
+        self.to_close = True
 
     class Config:
         arbitrary_types_allowed = True
+
+class ReadFileCustomTool(FileReadTool):
+    
+    def _run(self, **kwargs):
+        try:
+            file_path = kwargs.get("file_path", self.file_path)
+            with open(file_path, "rb") as file:
+                return file.read()
+        except Exception as e:
+            return f"Fail to read the file {file_path}. Error: {e}"

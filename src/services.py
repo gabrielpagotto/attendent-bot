@@ -49,7 +49,7 @@ class Services:
         return self.session.exec(
             select(Order)
             .outerjoin(OrderProduct, OrderProduct.order_id == Order.id)
-            .where(Order.client_id == client.id)
+            .where((Order.client_id == client.id) & (Order.status == "open"))
         ).first()
 
     def add_product_to_order(self, order_id: int, product_id: int, quantity: int) -> OrderProduct:
@@ -71,12 +71,22 @@ class Services:
 
     def get_client_conversation(self, client: Client):
         return self.session.exec(
-            select(ClientConversation).where(
-                (ClientConversation.client_id == client.id) & (ClientConversation.closed == False)
-            )
+            select(ClientConversation)
+            .where((ClientConversation.client_id == client.id) & (ClientConversation.closed == False))
+            .order_by(ClientConversation.id)
         ).all()
 
     def close_current_conversation(self, client: Client):
         for conversation in self.get_client_conversation(client):
             conversation.closed = True
+        self.session.commit()
+
+    def save_order_address(self, order_id: int, address: str):
+        order = self.session.get(Order, order_id)
+        order.address = address
+        self.session.commit()
+
+    def finalized_order(self, order_id: int):
+        order = self.session.get(Order, order_id)
+        order.status = "completed"
         self.session.commit()

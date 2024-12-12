@@ -47,6 +47,7 @@ def create_order_informations(order: Order | None) -> str:
     order_info += f' order_id: {order.id if order else "Não criado"}\n'
     order_info += f' - Status: {order.status if order else "products_dict"}\n'
     order_info += f" - Valor total: {order.total if order else 0.0}\n"
+    order_info += f" - Endereço de entrega: {order.address if order and order.address else "Não informado"}\n"
 
     if order:
         products_dict = []

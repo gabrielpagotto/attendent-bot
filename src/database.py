@@ -29,7 +29,6 @@ class Client(SQLModel, SQLModelBase, table=True):
     first_name: str | None = Field(default=None)
     last_name: str | None = Field(default=None)
     phone_number: str = Field(index=True)
-    address: str | None = Field(default=None)
 
     orders: list["Order"] = Relationship(back_populates="client")
     conversations: list["ClientConversation"] = Relationship(back_populates="client")
@@ -48,6 +47,7 @@ class ClientConversation(SQLModel, SQLModelBase, table=True):
 class Order(SQLModel, SQLModelBase, table=True):
     client_id: int = Field(foreign_key="client.id")
     status: str = Field(default="open")
+    address: str | None = Field(default=None)
 
     client: Client = Relationship(back_populates="orders")
     products: list["OrderProduct"] = Relationship(back_populates="order")
