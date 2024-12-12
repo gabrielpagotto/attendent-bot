@@ -1,4 +1,3 @@
-from typing import Any
 from crewai import Agent, Crew, Process, Task
 from langchain_community.chat_models import ChatOpenAI
 from config import config
@@ -9,99 +8,28 @@ from src.services import Services
 from src.database import Client
 
 
+class ScreeningAgent:
 
-class TaskProcessor:
-
-    def __init__(self, task: Task, services: Services, client: Client) -> None:
-        self.task = task
+    def __init__(self, services: Services, client: Client) -> None:
         self.services = services
         self.client = client
-
-    # @tool
-    # def save_client_names_tool(self, first_name: str, last_name: str):
-    #     """Ferramenta que deverá chamada assim que descobrir o nome e sobrenome do cliente, caso nome e sobrenome do cliente já sejam conhecidos, esta ferramente não deve ser utilizada."""
-
-    #     print("Salvando...")
-    #     print({"nome": first_name, "sobrenome": last_name})
-
-    def process_task(self) -> str:
+        self.conversations = self.services.get_client_conversation(client)
 
         company = self.services.get_company()
+        products = self.services.get_products()
 
         client_informations = utils.create_client_informations(self.client)
-        history_listing = utils.create_history_listing(self.client.conversations)
-        company_listing = utils.create_company_listing(company)
-
-        appointment_agent = Agent(
-            name="Agente de Agendamento",
-            role="Atendente experiente em agendamentos.",
-            goal="Realizar agendamentos de forma eficiente e garantir a satisfação do cliente.",
-            allow_delegation=False,
-            verbose=True,
-            backstory=f"""
-            Você é um atendente experiente em agendamentos.
-
-            {history_listing}
-
-            Dados obrigatórios para agendamento, pergunte um por vez:
-            - Nome
-            - Email
-            - Telefone
-            - Data
-            - Horário
-
-            Horários de atendimento:
-            - Segunda à sexta: 08:00 às 18:00
-            - Sábado: 08:00 às 12:00
-
-            Ao ser solicitado um agendamento, você deve verificar as informações obrigatórias e agendar o compromisso.
-            """,
-        )
-
-        sales_agent = Agent(
-            name="Agente de Vendas",
-            role="Realizar uma venda ao cliente.",
-            goal="Realizar uma venda ao cliente.",
-            allow_delegation=False,
-            backstory=f"""
-            Existem os seguintes produtos:
-            - Produto Coca Cola: R$ 100,00
-            - Produto Pepsi: R$ 200,00
-            - Produto Fanta: R$ 300,00
-            """,
-        )
-
-        manager_agent = Agent(
-            name="Agente principal",
-            role="Gerencie a equipe de forma eficiente e garanta a conclusão de tarefas de alta qualidade",
-            goal="Identificar a intenção do cliente e direcionar para o agente mais adequado.",
-            allow_delegation=True,
-            backstory=f"""
-            Você é o primeiro contato com o cliente experiente, habilidoso em atendimento ao cliente e orientar para o agente mais adequado.
-
-            O que se espera de você:
-            - Você deve conversar com o cliente para identificar qual a intenção dele.
-            - Você deve tentar identificar qual a intenção do cliente, quando não estiver claro para você, você deve perguntar para o cliente.
-            - Você deve saudar o cliente utilizando o nome da empresa.
-            - Ao identificar o que o cliente deseja, você deve direcionar para o agente mais adequado.
-            - Para iniciar a conversa, você deve perguntar o que o cliente deseja.
-
-            - Caso o cliente deseje realizar uma agendamento, você deve utilizar o atendente de agendamentos.
-
-            Informações da empresa:
-            - Nome: Armored Group
-            - Endereço: Rua dos Bobos, 0 - São Paulo, SP
-            - Telefone: (11) 99999-9999
-            """,
-        )
+        history_informations = utils.create_history_informations(self.conversations)
+        company_informations = utils.create_company_informations(company)
 
         save_client_names_tool = tools.SaveClientNamesTool(services=self.services, client=self.client)
+        close_current_conversation_tool = tools.CloseCurrentConversation(services=self.services, client=self.client)
 
-        first_contact_agent = Agent(
+        self.screening_agent = Agent(
             name="Agende de atendimento inicial",
             role="Triagem e conhecedor do cliente",
             goal="Garantir o primeiro contato com o cliente de forma simpática e agradável e encontrar o objetivo do cliente.",
-            tools=[save_client_names_tool],
+            tools=[save_client_names_tool, close_current_conversation_tool],
             backstory=f"""
                 Você é um profissional responsável por realizar a triagem do cliente incial de forma simples e agradável.
                 Antes de realizar qualquer ação você deve descobrir nome e sobrenome do cliente e salva-lo na base de dados, porém isso deve ser feito somente quando for descoberto ou o nome mudar.
@@ -111,20 +39,92 @@ class TaskProcessor:
                 Sempre que o cliente adicionar informações inválidas, advita-o para que ele coloque corretamente.
                 Você deve continuar a conversa fluentemente com base no histórico!
 
+                Você pode fornecer os seguintes serviços Informações da empresa e Realizar pedidos via delivery (Utilizando order_agent)!
+                Tenha certeza do nome do cliente antes de realizar qualquer tipo de serviço!
+
+                Caso a conversa seja relacionada a qualquer questão de produtos ou pedidos olhando como base o histórico ou como base no que o usuário está pedindo, você deve retornar a palavra "order_agent" apensas em sua resposta, essa palavra servirá para redirecionar para o setor de produtos/pedidos.
+
                 {client_informations}
-                {history_listing}
-                {company_listing}
+                {history_informations}
+                {company_informations}
             """,
         )
 
-        self.task.agent = first_contact_agent
+        order = services.get_order_by_client(client)
+
+        products_informations = utils.create_products_list(products)
+        order_informations = utils.create_order_informations(order)
+
+        create_order_tool = tools.CreateOrderTool(services=services, client=client)
+        add_product_in_order_tool = tools.AddProductInOrderTool(services=services, client=client)
+        remove_product_in_order_tool = tools.RemoveProductInOrderTool(services=services, client=client)
+        change_product_quantity_in_order_tool = tools.ChangeProductQuantityInOrderTool(
+            services=services, client=client
+        )
+
+        self.order_agent = Agent(
+            role="Controlador de pedidos de produtos",
+            goal="Garantir que o cliente possa visualizar os produtos disponíveis, criar pedidos adicionando produtos, listar pedidos já realizados e lançar novos pedidos",
+            tools=[
+                create_order_tool,
+                add_product_in_order_tool,
+                remove_product_in_order_tool,
+                change_product_quantity_in_order_tool,
+                close_current_conversation_tool,
+            ],
+            backstory=f"""
+                Você é um profissional responsável por garantir que o cliente possa controlar seus pedidos por completo como visualizar, cancelar, realizar novos pedidos.
+                Se o ID da ordem não existir você deve perguntar o cliente se ele deseja realizar um novo, pedido, se ele quiser deve ser criado uma nova ordem.
+                Você nunca deve mostrar os IDS e codes dos produtos para os clientes, somente nome e preço.
+                Você deve controlar de maneira profissional quando o cliente deseja visualizar, incluir, cancelar ou alterar quantidade de produtos no pedido.
+                Para utilizar as ferramentas você deve utilizar os IDs informados como order_id, product_id e order_product_id.
+                Para a seleção na lista de produtos você sempre levar em consideração o product_id.
+                Você sempre deve encontrar o product_id referente pelo nome, caso esteja mal escrito e esteja causando dúvidas em qual produto selecionar você deve pedir para o cliente ser mais claro na escolha dos produtos.
+                Se o cliente não informar a quantidade do pedido você deve pergunta-lo.
+                Somente poderá ser editado orders que estão com status em "open".
+                Antes de finalizar o pedido, é preciso que o cliente garanta que todos os itens estão em conformidade com o que ele escolheu, portanto ele precisa confirmar antes.
+
+                Você deve continuar a conversa fluentemente com base no histórico!
+
+                {client_informations}
+                {history_informations}
+                {products_informations}
+                {order_informations}
+            """,
+        )
+
+    def _execute_screening_agent(self, task: Task) -> str:
+        task.agent = self.screening_agent
 
         crew = Crew(
-            agents=[first_contact_agent],
-            tasks=[self.task],
+            agents=[self.screening_agent],
+            tasks=[task],
             process=Process.sequential,
             llm=ChatOpenAI(model="gpt-4o-mini", temperature=0.5, api_key=config.openai_api_key),
         )
         crew.kickoff()
+        return task.output.raw, "screening_agent"
 
-        return self.task.output.raw
+    def _execute_order_agent(self, task: Task) -> tuple[str, str]:
+        task.agent = self.order_agent
+        crew = Crew(
+            agents=[self.screening_agent],
+            tasks=[task],
+            process=Process.sequential,
+            llm=ChatOpenAI(model="gpt-4o-mini", temperature=0.5, api_key=config.openai_api_key),
+        )
+        crew.kickoff()
+        return task.output.raw, "order_agent"
+
+    def run(self, task: Task) -> tuple[str, str]:
+        agents = ["screening_agent", "order_agent"]
+        using_agent = self.conversations[-1].agent if len(self.conversations) > 0 else agents[0]
+        while using_agent is not None and using_agent in agents:
+            output, agent = {
+                agents[0]: self._execute_screening_agent(task),
+                agents[1]: self._execute_order_agent(task),
+            }[using_agent]
+
+            if output not in agents:
+                return output, agent
+            using_agent = output

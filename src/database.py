@@ -24,8 +24,6 @@ class Product(SQLModel, SQLModelBase, table=True):
     price: float = Field(decimal_places=2)
     code: str = Field()
 
-    orders: list["Order"] = Relationship(back_populates="product")
-
 
 class Client(SQLModel, SQLModelBase, table=True):
     first_name: str | None = Field(default=None)
@@ -42,23 +40,33 @@ class ClientConversation(SQLModel, SQLModelBase, table=True):
     output: str = Field()
     agent: str = Field()
     client_id: int = Field(foreign_key="client.id")
+    closed: bool = Field(default=False)
 
     client: Client = Relationship(back_populates="conversations")
 
 
 class Order(SQLModel, SQLModelBase, table=True):
     client_id: int = Field(foreign_key="client.id")
-    product_id: int = Field(foreign_key="product.id")
-    price: float = Field(decimal_places=2)
-    quantity: int = Field()
     status: str = Field(default="open")
 
     client: Client = Relationship(back_populates="orders")
-    product: Product = Relationship(back_populates="orders")
+    products: list["OrderProduct"] = Relationship(back_populates="order")
 
     @property
     def total(self) -> float:
-        return round(self.price * self.quantity, 2)
+        total = 0.0
+        for product in self.products:
+            total += round(product.price * product.quantity, 2)
+        return round(total, 2)
+
+
+class OrderProduct(SQLModel, SQLModelBase, table=True):
+    order_id: int = Field(foreign_key="order.id")
+    product_id: int = Field(foreign_key="product.id")
+    price: float = Field(decimal_places=2)
+    quantity: int = Field()
+
+    order: Order = Relationship(back_populates="products")
 
 
 engine = create_engine(config.db_url)
